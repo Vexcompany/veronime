@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ],
+  "functions": {
+    "api/stream.js": { "memory": 512, "maxDuration": 30 },
+    "api/anime-list.js": { "memory": 512, "maxDuration": 30 },
+    "api/anime-detail.js": { "memory": 512, "maxDuration": 30 },
+    "api/search.js": { "memory": 512, "maxDuration": 30 },
+    "api/episode-detail.js": { "memory": 512, "maxDuration": 30 }
+  }
+}
