@@ -8,6 +8,7 @@
     "api/anime-list.js": { "memory": 512, "maxDuration": 30 },
     "api/anime-detail.js": { "memory": 512, "maxDuration": 30 },
     "api/search.js": { "memory": 512, "maxDuration": 30 },
-    "api/episode-detail.js": { "memory": 512, "maxDuration": 30 }
+    "api/episode-detail.js": { "memory": 512, "maxDuration": 30 },
+    "api/home-data.js": { "memory": 512, "maxDuration": 30 }
   }
 }
