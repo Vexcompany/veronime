@@ -19,7 +19,6 @@ export default function BrowsePage() {
   const [error, setError] = useState(null);
   const initialized = useRef(false);
 
-  // Reset saat pindah halaman
   useEffect(() => {
     setItems([]);
     setPage(1);
@@ -40,7 +39,6 @@ export default function BrowsePage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, config.type]);
 
   return (
