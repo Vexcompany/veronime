@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AnimeCard from '../components/AnimeCard';
 import VideoPlayer from '../components/VideoPlayer';
-import { fetchDetail, fetchStream } from '../utils/api';
+import { fetchDetail, fetchStream, fetchStreamByServer } from '../utils/api';
 
 export default function AnimeDetail() {
   const { slug } = useParams();
@@ -15,14 +15,16 @@ export default function AnimeDetail() {
   const [streamUrl, setStreamUrl] = useState('');
   const [streamLoading, setStreamLoading] = useState(false);
   const [streamError, setStreamError] = useState('');
-  const [streamSources, setStreamSources] = useState([]);
+  const [chosenServer, setChosenServer] = useState('');
+  const [allServers, setAllServers] = useState({});  // { "3": "Wibufile 480p", ... }
   const [epPage, setEpPage] = useState(0);
   const playerRef = useRef(null);
   const EP_PER_PAGE = 60;
 
   useEffect(() => {
     setLoading(true); setError(null);
-    setAnime(null); setSelectedEp(null); setStreamUrl(''); setStreamSources([]);
+    setAnime(null); setSelectedEp(null);
+    setStreamUrl(''); setAllServers({}); setChosenServer('');
     fetchDetail(slug)
       .then(setAnime)
       .catch(e => setError(e.message))
@@ -35,18 +37,42 @@ export default function AnimeDetail() {
     setStreamLoading(true);
     setStreamError('');
     setStreamUrl('');
-    setStreamSources([]);
+    setAllServers({});
+    setChosenServer('');
     setTimeout(() => playerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     try {
       const data = await fetchStream(ep.url);
-      if (data.player_src) {
+      if (data.success && data.player_src) {
         setStreamUrl(data.player_src);
-        setStreamSources(data.all_sources || []);
+        setChosenServer(data.chosen_server_id || '');
+        setAllServers(data.all_servers || {});
       } else {
-        setStreamError('Pixeldrain tidak tersedia untuk episode ini. Coba episode lain.');
+        setStreamError('Stream tidak tersedia untuk episode ini.');
       }
     } catch (e) {
       setStreamError('Gagal memuat stream: ' + e.message);
+    }
+    setStreamLoading(false);
+  };
+
+  // Ganti server/kualitas manual
+  const handleSwitchServer = async (serverId) => {
+    if (!selectedEp || serverId === chosenServer) return;
+    setStreamLoading(true);
+    setStreamError('');
+    setStreamUrl('');
+    try {
+      // Slug episode dari URL: .../anime-title-episode-1/
+      const epSlug = selectedEp.slug || selectedEp.url?.match(/\/([^\/]+)\/?$/)?.[1] || '';
+      const data = await fetchStreamByServer(epSlug, serverId);
+      if (data.success && data.player_src) {
+        setStreamUrl(data.player_src);
+        setChosenServer(serverId);
+      } else {
+        setStreamError(`Server ${allServers[serverId] || serverId} tidak tersedia.`);
+      }
+    } catch (e) {
+      setStreamError('Gagal ganti server: ' + e.message);
     }
     setStreamLoading(false);
   };
@@ -75,6 +101,13 @@ export default function AnimeDetail() {
   const totalPages = Math.ceil(episodes.length / EP_PER_PAGE);
   const displayEps = episodes.slice(epPage * EP_PER_PAGE, (epPage + 1) * EP_PER_PAGE);
 
+  // Kelompokkan server berdasarkan host
+  const wibuServers = Object.entries(allServers).filter(([,v]) => v.toLowerCase().includes('wibu'));
+  const megaServers = Object.entries(allServers).filter(([,v]) => v.toLowerCase().includes('mega'));
+  const otherServers = Object.entries(allServers).filter(([,v]) =>
+    !v.toLowerCase().includes('wibu') && !v.toLowerCase().includes('mega')
+  );
+
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8">
       {/* Breadcrumb */}
@@ -89,7 +122,7 @@ export default function AnimeDetail() {
         <div className="lg:sticky lg:top-24 self-start">
           {anime.image ? (
             <div className="rounded overflow-hidden border-glow mb-5 holo-shimmer scanline-overlay"
-              style={{ boxShadow:'0 0 40px rgba(0,194,255,0.15)' }}>
+              style={{ boxShadow: '0 0 40px rgba(0,194,255,0.15)' }}>
               <img src={anime.image} alt={anime.title} className="w-full aspect-[2/3] object-cover"/>
             </div>
           ) : (
@@ -143,8 +176,13 @@ export default function AnimeDetail() {
               {streamLoading && (
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 border border-cyan-neon border-t-transparent rounded-full animate-spin"/>
-                  <span className="font-mono text-xs text-slate-v">EXTRACTING PIXELDRAIN...</span>
+                  <span className="font-mono text-xs text-slate-v">LOADING STREAM...</span>
                 </div>
+              )}
+              {chosenServer && allServers[chosenServer] && (
+                <span className="font-mono text-xs text-cyan-neon/60 ml-auto">
+                  {allServers[chosenServer]}
+                </span>
               )}
             </div>
 
@@ -166,20 +204,58 @@ export default function AnimeDetail() {
               <VideoPlayer
                 src={streamUrl}
                 title={`${anime.title}${selectedEp ? ` - Ep ${selectedEp.number}` : ''}`}
-                onError={() => setStreamError('Video error. Format tidak kompatibel atau link bermasalah.')}
+                onError={() => setStreamError('Video error. Coba ganti server di bawah.')}
               />
             )}
 
-            {/* Pilih kualitas */}
-            {streamSources.length > 1 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-slate-v">KUALITAS:</span>
-                {streamSources.map((s, i) => (
-                  <button key={i} onClick={() => setStreamUrl(s.url)}
-                    className={`ep-btn rounded px-3 py-1 transition-all ${s.url === streamUrl ? 'active' : ''}`}>
-                    {s.quality || `Src ${i+1}`}
-                  </button>
-                ))}
+            {/* ===== SERVER SELECTOR ===== */}
+            {Object.keys(allServers).length > 0 && (
+              <div className="mt-4 p-4 bg-navy/40 rounded border border-slate-v/30">
+                <p className="font-mono text-xs text-slate-v mb-3 tracking-wider">PILIH SERVER / KUALITAS</p>
+                <div className="flex flex-col gap-3">
+                  {/* Wibufile */}
+                  {wibuServers.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">Wibufile</span>
+                      {wibuServers.map(([id, label]) => (
+                        <button key={id} onClick={() => handleSwitchServer(id)}
+                          className={`ep-btn rounded px-3 py-1.5 transition-all text-xs ${
+                            chosenServer === id ? 'active' : ''
+                          }`}>
+                          {label.replace('Wibufile ', '')}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Mega */}
+                  {megaServers.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">Mega</span>
+                      {megaServers.map(([id, label]) => (
+                        <button key={id} onClick={() => handleSwitchServer(id)}
+                          className={`ep-btn rounded px-3 py-1.5 transition-all text-xs ${
+                            chosenServer === id ? 'active' : ''
+                          }`}>
+                          {label.replace('Mega ', '')}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Lainnya */}
+                  {otherServers.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">Lainnya</span>
+                      {otherServers.map(([id, label]) => (
+                        <button key={id} onClick={() => handleSwitchServer(id)}
+                          className={`ep-btn rounded px-3 py-1.5 transition-all text-xs ${
+                            chosenServer === id ? 'active' : ''
+                          }`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -198,8 +274,10 @@ export default function AnimeDetail() {
                     {Array.from({ length: totalPages }).map((_,i) => (
                       <button key={i} onClick={() => setEpPage(i)}
                         className={`font-mono text-xs px-2.5 py-1 border rounded transition-colors ${
-                          epPage===i ? 'border-cyan-neon text-cyan-neon bg-cyan-neon/10'
-                            : 'border-slate-v text-slate-v hover:border-cyan-neon/50'}`}>
+                          epPage===i
+                            ? 'border-cyan-neon text-cyan-neon bg-cyan-neon/10'
+                            : 'border-slate-v text-slate-v hover:border-cyan-neon/50'
+                        }`}>
                         {i*EP_PER_PAGE+1}–{Math.min((i+1)*EP_PER_PAGE, episodes.length)}
                       </button>
                     ))}
@@ -208,9 +286,12 @@ export default function AnimeDetail() {
               </div>
               <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-8 xl:grid-cols-10 gap-2">
                 {displayEps.map((ep, i) => (
-                  <button key={i} onClick={() => handleEpisode(ep)} title={ep.date || ep.title}
-                    className={`ep-btn rounded py-2 text-center transition-all ${selectedEp?.url===ep.url ? 'active' : ''}`}>
-                    {ep.number || (epPage*EP_PER_PAGE+i+1)}
+                  <button key={i} onClick={() => handleEpisode(ep)}
+                    title={ep.date || ep.title}
+                    className={`ep-btn rounded py-2 text-center transition-all ${
+                      selectedEp?.url === ep.url ? 'active' : ''
+                    }`}>
+                    {ep.number || (epPage * EP_PER_PAGE + i + 1)}
                   </button>
                 ))}
               </div>
