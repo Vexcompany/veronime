@@ -142,7 +142,7 @@ export default function Home() {
   return (
     <div>
       <HeroSection anime={terbaru[0] || null}/>
-      <AnimeRow title="ANIME TERBARU" tag="LIVE" items={terbaru} viewAllLink="/ongoing"/>
+      <AnimeRow title="ANIME TERBARU" tag="LIVE" items={terbaru} viewAllLink="/ongoing" usePosterApi={true}/>
       <TodaySchedule items={todaySchedule} day={today}/>
     </div>
   );

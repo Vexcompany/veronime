@@ -49,7 +49,7 @@ export default function BrowsePage() {
 
       {items.length > 0 && (
         <div className="neo-grid">
-          {items.map((anime, i) => <AnimeCard key={`${anime.slug}-${i}`} anime={anime}/>)}
+          {items.map((anime, i) => <AnimeCard key={`${anime.slug}-${i}`} anime={anime} usePosterApi={true}/>)}
         </div>
       )}
 
