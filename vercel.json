@@ -8,7 +8,7 @@
     "api/detail.js":   { "memory": 256, "maxDuration": 20 },
     "api/search.js":   { "memory": 256, "maxDuration": 20 },
     "api/schedule.js": { "memory": 256, "maxDuration": 20 },
-    "api/stream.js":   { "memory": 512, "maxDuration": 30 }
+    "api/stream.js":   { "memory": 256, "maxDuration": 30 },
+    "api/poster.js":   { "memory": 256, "maxDuration": 20 }
   }
 }
-
