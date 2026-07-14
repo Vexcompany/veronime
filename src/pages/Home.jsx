@@ -94,18 +94,15 @@ export default function Home() {
   useEffect(() => {
     setLoading(true);
 
-    // Primary: ambil home-data + popular + movie sekaligus
     Promise.all([
       fetchHomeData(),
       fetchAnimeList('popular', 1),
       fetchAnimeList('movie', 1),
     ])
       .then(([homeData, popData, movieData]) => {
-        // home-data: terbaru dari homepage Samehadaku
         const tb = homeData.terbaru || [];
         const top10 = homeData.top10 || [];
 
-        // Gabung: prioritas terbaru, fallback top10
         setTerbaru(tb.length ? tb : top10);
         setPopular(popData.results || top10);
         setMovies(movieData.results || []);
