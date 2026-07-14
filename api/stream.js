@@ -1,6 +1,5 @@
-// api/stream.js — Vercel Serverless Function
-// Scrapes halaman episode Samehadaku, ekstrak Pixeldrain stream URL
-// URL episode format: https://v2.samehadaku.how/[anime-slug]-episode-N/
+// api/stream.js — Scrape halaman episode Samehadaku, ambil link Pixeldrain
+// Pixeldrain dipilih karena linknya permanen (tidak expire)
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -12,7 +11,7 @@ const HEADERS = {
   'Referer': BASE_URL,
 };
 
-// Kualitas prioritas
+// Kualitas yang diinginkan, urutan prioritas
 const QUALITY_PRIORITY = ['1080', '720', '480', '360', '240'];
 
 module.exports = async (req, res) => {
@@ -21,35 +20,27 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'URL episode dibutuhkan' });
-
-  // Validasi URL
-  if (!url.includes('samehadaku')) {
-    return res.status(400).json({ error: 'URL harus dari samehadaku.how' });
-  }
+  if (!url) return res.status(400).json({ error: 'Parameter url dibutuhkan' });
+  if (!url.includes('samehadaku')) return res.status(400).json({ error: 'URL harus dari samehadaku.how' });
 
   try {
     const { data: html } = await axios.get(url, { headers: HEADERS, timeout: 20000 });
     const $ = cheerio.load(html);
 
-    const allPixeldrainLinks = [];
+    const pixeldrainLinks = [];
 
-    // ===== METHOD 1: .download-eps (seperti contoh Gemini) =====
-    // Format: <div class="download-eps"><ul><li><strong>720p</strong><a href="...pixeldrain...">Pixeldrain</a></li></ul></div>
-    $('.download-eps li, .dlbod li, .download-box li, .dload li').each((_, el) => {
-      const $el = $(el);
-      const quality = $el.find('strong, b, .res').first().text().trim() || 'Unknown';
-      $el.find('a').each((_, a) => {
+    // === METHOD 1: .download-eps (selector utama Samehadaku) ===
+    // Struktur: <div class="download-eps"><ul><li><strong>720p</strong><a href="pixeldrain...">Pixeldrain</a></li></ul>
+    $('.download-eps li').each((_, li) => {
+      const quality = $(li).find('strong, b').first().text().trim() || 'Unknown';
+      $(li).find('a').each((_, a) => {
         const href = $(a).attr('href') || '';
-        const host = $(a).text().trim();
-        if (href.includes('pixeldrain.com/u/') || href.includes('pixeldrain.com/l/')) {
+        if (href.includes('pixeldrain.com')) {
           const match = href.match(/\/(u|l)\/([a-zA-Z0-9]+)/);
           if (match) {
-            allPixeldrainLinks.push({
+            pixeldrainLinks.push({
               quality,
-              host,
               fileId: match[2],
-              type: match[1], // u = file, l = list
               streamUrl: `https://pixeldrain.com/api/file/${match[2]}`,
             });
           }
@@ -57,78 +48,68 @@ module.exports = async (req, res) => {
       });
     });
 
-    // ===== METHOD 2: Semua link pixeldrain di halaman =====
-    if (!allPixeldrainLinks.length) {
-      $('a[href*="pixeldrain.com"]').each((_, el) => {
-        const href = $(el).attr('href') || '';
+    // === METHOD 2: Semua link pixeldrain di halaman ===
+    if (!pixeldrainLinks.length) {
+      $('a[href*="pixeldrain.com"]').each((_, a) => {
+        const href = $(a).attr('href') || '';
         const match = href.match(/\/(u|l)\/([a-zA-Z0-9]+)/);
-        // Cari kualitas dari parent element
-        const quality = $(el).closest('li').find('strong, b, .res').first().text().trim()
-          || $(el).prev('strong').text().trim()
+        const quality = $(a).closest('li').find('strong, b').first().text().trim()
+          || $(a).prev('strong, b').text().trim()
           || 'Unknown';
         if (match) {
-          allPixeldrainLinks.push({
+          pixeldrainLinks.push({
             quality,
-            host: $(el).text().trim() || 'Pixeldrain',
             fileId: match[2],
-            type: match[1],
             streamUrl: `https://pixeldrain.com/api/file/${match[2]}`,
           });
         }
       });
     }
 
-    // ===== METHOD 3: Cek iframe embed =====
-    let embedSrc = '';
-    $('iframe').each((_, el) => {
-      const src = $(el).attr('src') || $(el).attr('data-src') || '';
-      // Pixeldrain embed: https://pixeldrain.com/u/ID?theme=...
-      if (src.includes('pixeldrain.com')) {
+    // === METHOD 3: Iframe embed pixeldrain ===
+    if (!pixeldrainLinks.length) {
+      $('iframe[src*="pixeldrain"]').each((_, iframe) => {
+        const src = $(iframe).attr('src') || $(iframe).attr('data-src') || '';
         const match = src.match(/\/(u|l)\/([a-zA-Z0-9]+)/);
         if (match) {
-          embedSrc = `https://pixeldrain.com/api/file/${match[2]}`;
-          allPixeldrainLinks.push({
+          pixeldrainLinks.push({
             quality: 'Embed',
             fileId: match[2],
-            type: match[1],
-            streamUrl: embedSrc,
+            streamUrl: `https://pixeldrain.com/api/file/${match[2]}`,
           });
         }
-      }
-    });
+      });
+    }
 
-    // ===== PILIH KUALITAS TERBAIK =====
+    // === PILIH KUALITAS TERBAIK ===
     let chosen = null;
     for (const q of QUALITY_PRIORITY) {
-      chosen = allPixeldrainLinks.find(l => l.quality && l.quality.includes(q));
+      chosen = pixeldrainLinks.find(l => l.quality && l.quality.includes(q));
       if (chosen) break;
     }
-    // Fallback ke yang pertama
-    if (!chosen && allPixeldrainLinks.length > 0) {
-      chosen = allPixeldrainLinks[0];
-    }
+    if (!chosen && pixeldrainLinks.length > 0) chosen = pixeldrainLinks[0];
 
-    // ===== INFO EPISODE (judul, prev/next) =====
+    // === INFO EPISODE: judul + navigasi prev/next ===
     const title = $('h1.entry-title, h1').first().text().trim()
       || $('title').text().replace(' Sub Indo - Samehadaku', '').trim();
-
-    const prevEpUrl = $('.nvs.nvp a, .prev-post a, .previous a, a.previous-episode').attr('href') || null;
-    const nextEpUrl = $('.nvs.nvn a, .next-post a, .next a, a.next-episode').attr('href') || null;
+    const prevUrl = $('.nvs.nvp a, .prev-post a, .previous a').attr('href') || null;
+    const nextUrl = $('.nvs.nvn a, .next-post a, .next-ep a').attr('href') || null;
 
     return res.json({
       success: !!chosen,
-      player_src: chosen ? chosen.streamUrl : '',
-      chosen_quality: chosen ? chosen.quality : '',
-      all_sources: allPixeldrainLinks.map(l => ({
+      player_src: chosen?.streamUrl || '',
+      chosen_quality: chosen?.quality || '',
+      all_sources: pixeldrainLinks.map(l => ({
         quality: l.quality,
         url: l.streamUrl,
+        fileId: l.fileId,
       })),
       title,
-      navigation: { prev: prevEpUrl, next: nextEpUrl },
+      navigation: { prev: prevUrl, next: nextUrl },
     });
 
   } catch (error) {
     console.error('[stream]', error.message);
-    return res.status(500).json({ error: 'Gagal mengambil stream: ' + error.message });
+    return res.status(500).json({ error: 'Gagal scrape halaman episode: ' + error.message });
   }
 };

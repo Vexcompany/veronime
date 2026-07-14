@@ -1,22 +1,7 @@
-// api/search.js — Vercel Serverless Function
-// Search di Samehadaku menggunakan WordPress search (?s=query)
+// api/search.js — Proxy ke api-nanas.my.id/api/nonton/samehadaku/search.php
 const axios = require('axios');
-const cheerio = require('cheerio');
 
-const BASE_URL = 'https://v2.samehadaku.how';
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Referer': BASE_URL,
-};
-
-function extractAnimeSlug(url) {
-  if (!url) return '';
-  const animeMatch = url.match(/\/anime\/([^\/]+)\/?/);
-  if (animeMatch) return animeMatch[1];
-  const parts = url.replace(/\/$/, '').split('/');
-  return parts[parts.length - 1] || '';
-}
+const NANAS_BASE = 'https://api-nanas.my.id/api/nonton/samehadaku';
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,50 +11,37 @@ module.exports = async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.status(400).json({ error: 'Query minimal 2 karakter' });
 
-  // WordPress search endpoint
-  const searchUrl = `${BASE_URL}/?s=${encodeURIComponent(q)}`;
-
   try {
-    const { data } = await axios.get(searchUrl, { headers: HEADERS, timeout: 15000 });
-    const $ = cheerio.load(data);
-
-    const results = [];
-    const seen = new Set();
-
-    // Method 1: artikel hasil pencarian
-    $('article, .animepost, .post').each((_, el) => {
-      const $el = $(el);
-      const linkEl = $el.find('h2 a, h1 a').first();
-      const link = linkEl.attr('href') || $el.find('a').first().attr('href') || '';
-      const title = linkEl.text().trim() || $el.find('a').first().attr('title') || '';
-      const imgEl = $el.find('img').first();
-      const image = imgEl.attr('src') || imgEl.attr('data-src') || '';
-      const slug = extractAnimeSlug(link);
-
-      if (title && link && slug && !seen.has(slug)) {
-        seen.add(slug);
-        results.push({ title, slug, image, url: link });
-      }
+    const { data } = await axios.get(`${NANAS_BASE}/search.php`, {
+      params: { q },
+      timeout: 15000,
     });
 
-    // Method 2: semua link ke /anime/ yang ada di halaman
-    if (results.length === 0) {
-      $('a[href*="/anime/"]').each((_, el) => {
-        const href = $(el).attr('href') || '';
-        const title = $(el).attr('title') || $(el).text().trim();
-        const slug = extractAnimeSlug(href);
-        const image = $(el).find('img').attr('src') || '';
-
-        if (title && slug && !seen.has(slug) && !href.includes('page')) {
-          seen.add(slug);
-          results.push({ title, slug, image, url: href });
-        }
-      });
+    if (!data.status) {
+      return res.status(500).json({ error: 'API error' });
     }
 
-    return res.json({ results, query: q, total: results.length });
+    const results = (data.result.results || []).map(a => ({
+      title: a.title,
+      slug: extractSlug(a.url),
+      image: a.image,
+      score: a.score,
+      status: a.status,
+      synopsis: a.synopsis,
+      genres: a.genres || [],
+      url: a.url,
+    }));
+
+    return res.json({ results, total: data.result.count, query: q });
+
   } catch (error) {
     console.error('[search]', error.message);
-    return res.status(500).json({ error: 'Gagal mencari: ' + error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
+
+function extractSlug(url) {
+  if (!url) return '';
+  const m = url.match(/\/anime\/([^\/]+)\/?/);
+  return m ? m[1] : '';
+}
