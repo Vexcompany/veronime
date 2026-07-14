@@ -36,7 +36,6 @@ export default function AnimeDetail() {
     setStreamError('');
     setStreamUrl('');
     setStreamSources([]);
-    // Scroll ke player
     setTimeout(() => playerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     try {
       const data = await fetchStream(ep.url);
