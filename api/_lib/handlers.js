@@ -248,6 +248,7 @@ async function handleDebug(req, res) {
       return res.json({
         proxy: getProxy() ? '(configured)' : null,
         fetchProxy: getFetchProxy() ? '(configured)' : null,
+        pool: require('./proxypool').status(),
         base: BASE_URL,
       });
     default:

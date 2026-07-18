@@ -13,6 +13,7 @@
 
 const axios = require('axios');
 const cheerio = require('cheerio');
+const proxypool = require('./proxypool');
 
 const BASE_URL = (process.env.ANIBIPLAY_BASE || 'https://anibiplay.net').replace(/\/+$/, '') + '/';
 
@@ -86,60 +87,78 @@ const DEFAULT_HEADERS = {
 
 /**
  * Perform a GET request to the site.
- * Urutan percobaan:
- *   1-2. Request langsung (pakai axios proxy jika ANIBIPLAY_PROXY di-set)
- *   3-4. Via fetch-proxy template (jika ANIBIPLAY_FETCH_PROXY di-set) — anti-403
- * @param {string} url - Target URL
- * @param {object} params - Query parameters
- * @param {object} extraHeaders - Header tambahan (override)
+ * Rantai percobaan (dengan budget waktu agar tidak kena maxDuration):
+ *   1. Request langsung (pakai explicit axios proxy jika env diset)
+ *   2. Via fetch-proxy template (jika ANIBIPLAY_FETCH_PROXY di-set)
+ *   3. Free proxy pool auto-discover (jika pool aktif & belum ada proxy eksplisit)
  */
 async function fetchPage(url, params = {}, extraHeaders = {}) {
-  const requestConfig = {
-    headers: { ...DEFAULT_HEADERS, ...extraHeaders },
-    params,
-    timeout: 15000,
-    maxRedirects: 5,
-  };
-
-  const proxy = buildProxyConfig();
-  if (proxy) requestConfig.proxy = proxy;
-
+  const startedAt = Date.now();
+  const headers = { ...DEFAULT_HEADERS, ...extraHeaders };
+  const explicitProxy = buildProxyConfig();
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
+
+  // 1. Direct / explicit proxy
+  try {
+    const response = await axios.get(url, {
+      headers,
+      params,
+      timeout: 10000,
+      maxRedirects: 5,
+      ...(explicitProxy ? { proxy: explicitProxy } : {}),
+    });
+    return response.data;
+  } catch (err) {
+    lastError = err;
+  }
+
+  // 2. Relay template
+  if (fetchProxyTemplate && Date.now() - startedAt < 12000) {
     try {
-      const response = await axios.get(url, requestConfig);
+      const u = new URL(url);
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, v);
+      }
+      const relayUrl = fetchProxyTemplate.replace('%s', encodeURIComponent(u.toString()));
+      const response = await axios.get(relayUrl, { headers, timeout: 15000, maxRedirects: 5 });
       return response.data;
     } catch (err) {
       lastError = err;
-      const status = err.response?.status;
-      if (status && status >= 400 && status < 500 && status !== 403) break;
-      if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
     }
   }
 
-  // Fallback relay: bangun full URL + query lalu kirim lewat template
-  if (fetchProxyTemplate) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const u = new URL(url);
-        for (const [k, v] of Object.entries(params)) {
-          if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, v);
+  // 3. Auto free-proxy pool (anti-403). Lewati jika user sudah set proxy eksplisit.
+  if (proxypool.isEnabled() && !globalProxy && Date.now() - startedAt < 16000) {
+    try {
+      const pUrl = await proxypool.findWorkingProxy(`${BASE_URL}api/search?q=test`, headers);
+      if (pUrl) {
+        try {
+          const response = await axios.get(url, {
+            headers,
+            params,
+            timeout: 12000,
+            maxRedirects: 5,
+            proxy: proxypool.parseProxy(pUrl),
+          });
+          return response.data;
+        } catch (err) {
+          proxypool.markProxyDead(pUrl);
+          lastError = err;
         }
-        const relayUrl = fetchProxyTemplate.replace('%s', encodeURIComponent(u.toString()));
-        const response = await axios.get(relayUrl, {
-          headers: { ...DEFAULT_HEADERS, ...extraHeaders },
-          timeout: 20000,
-          maxRedirects: 5,
-        });
-        return response.data;
-      } catch (err) {
-        lastError = err;
-        if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
+      } else {
+        lastError = new Error('semua proxy pool gagal/terblokir');
       }
+    } catch (err) {
+      lastError = err;
     }
   }
 
-  throw lastError;
+  const err = new Error(
+    `${lastError?.message || 'request gagal'} — semua jalur (direct/relay/pool) gagal. ` +
+    'Set ANIBIPLAY_PROXY (http://user:pass@host:port) atau ANIBIPLAY_FETCH_PROXY di environment Vercel.'
+  );
+  err.cause = lastError;
+  throw err;
 }
 
 /**
