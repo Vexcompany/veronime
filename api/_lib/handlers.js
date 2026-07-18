@@ -1,7 +1,7 @@
 // api/_lib/handlers.js — Semua handler route API veronime (dipakai oleh api/[...slug].js)
 // Route tersedia: home, detail, episode, search, explore, genres, proxy, debug
 const axios = require('axios');
-const { getHomepage, getAnimeDetails, getEpisodeDetails, search, explore, getProxy, BASE_URL } = require('./anibiplay');
+const { getHomepage, getAnimeDetails, getEpisodeDetails, search, explore, getProxy, getFetchProxy, BASE_URL } = require('./anibiplay');
 const {
   buildHomeSections,
   normalizeDetail,
@@ -245,7 +245,11 @@ async function handleDebug(req, res) {
     case 'search':
       return res.json(await anibi.search(req.query.q || 'naruto'));
     case 'proxy':
-      return res.json({ proxy: getProxy() ? '(configured)' : null, base: BASE_URL });
+      return res.json({
+        proxy: getProxy() ? '(configured)' : null,
+        fetchProxy: getFetchProxy() ? '(configured)' : null,
+        base: BASE_URL,
+      });
     default:
       return res.status(400).json({ error: 'what harus salah satu dari: home, detail, episode, explore, search, proxy' });
   }

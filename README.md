@@ -21,6 +21,14 @@ Konfigurasi proxy via environment variable (salah satu):
 `ANIBIPLAY_PROXY`, `SCRAPE_PROXY`, `PROXY_URL`, `HTTPS_PROXY`
 Format: `http://user:pass@host:port`
 
+> **PENTING:** anibiplay.net memblokir IP datacenter Vercel (403). Set salah satu
+> proxy di atas (proxy non-AWS) agar scraping production jalan.
+
+Alternatif tanpa proxy: **relay fetch template** — `ANIBIPLAY_FETCH_PROXY`
+berisi URL template dengan placeholder `%s` (contoh Cloudflare Workers:
+`https://namaworker.workers.dev/?u=%s`). Dipakai otomatis saat request
+langsung gagal (403/5xx/timeout).
+
 Kustom base URL sumber: `ANIBIPLAY_BASE` (default `https://anibiplay.net`).
 
 ## API Endpoints

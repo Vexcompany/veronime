@@ -23,6 +23,12 @@ let globalProxy =
   process.env.HTTPS_PROXY ||
   null;
 
+// Relay/template fetch (opsional): dipakai otomatis kalau request langsung
+// kena blokir (403 dll). Format: URL template dengan placeholder %s
+// (akan diganti URL target yang sudah di-encode).
+// Contoh: https://abc.workers.dev/?u=%s  atau  http://relay-mu/fetch?url=%s
+let fetchProxyTemplate = process.env.ANIBIPLAY_FETCH_PROXY || null;
+
 /**
  * Configure global proxy for Axios requests.
  * @param {string} proxyUrl - Proxy URL (e.g. http://127.0.0.1:8080 atau http://user:pass@host:port)
@@ -33,6 +39,17 @@ function setProxy(proxyUrl) {
 
 function getProxy() {
   return globalProxy;
+}
+
+/**
+ * Set relay fetch template (placeholder %s).
+ */
+function setFetchProxy(templateUrl) {
+  fetchProxyTemplate = templateUrl;
+}
+
+function getFetchProxy() {
+  return fetchProxyTemplate;
 }
 
 /**
@@ -68,7 +85,10 @@ const DEFAULT_HEADERS = {
 };
 
 /**
- * Perform a GET request to the site dengan retry sederhana.
+ * Perform a GET request to the site.
+ * Urutan percobaan:
+ *   1-2. Request langsung (pakai axios proxy jika ANIBIPLAY_PROXY di-set)
+ *   3-4. Via fetch-proxy template (jika ANIBIPLAY_FETCH_PROXY di-set) — anti-403
  * @param {string} url - Target URL
  * @param {object} params - Query parameters
  * @param {object} extraHeaders - Header tambahan (override)
@@ -91,12 +111,34 @@ async function fetchPage(url, params = {}, extraHeaders = {}) {
       return response.data;
     } catch (err) {
       lastError = err;
-      // Jangan retry untuk 404/400
       const status = err.response?.status;
-      if (status && status >= 400 && status < 500) break;
+      if (status && status >= 400 && status < 500 && status !== 403) break;
       if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
     }
   }
+
+  // Fallback relay: bangun full URL + query lalu kirim lewat template
+  if (fetchProxyTemplate) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const u = new URL(url);
+        for (const [k, v] of Object.entries(params)) {
+          if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, v);
+        }
+        const relayUrl = fetchProxyTemplate.replace('%s', encodeURIComponent(u.toString()));
+        const response = await axios.get(relayUrl, {
+          headers: { ...DEFAULT_HEADERS, ...extraHeaders },
+          timeout: 20000,
+          maxRedirects: 5,
+        });
+        return response.data;
+      } catch (err) {
+        lastError = err;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+  }
+
   throw lastError;
 }
 
@@ -211,6 +253,8 @@ module.exports = {
   BASE_URL,
   setProxy,
   getProxy,
+  setFetchProxy,
+  getFetchProxy,
   fetchPage,
   parseInertiaPayload,
   getHomepage,
