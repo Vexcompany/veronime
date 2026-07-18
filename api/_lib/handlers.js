@@ -255,8 +255,10 @@ async function handleDebug(req, res) {
 function handleIndex(req, res) {
   return res.json({
     name: 'veronime-api',
+    version: 3,
     source: 'anibiplay',
     routes: ['home', 'detail', 'episode', 'search', 'explore', 'genres', 'proxy', 'debug'],
+    _echo: { url: req.url || null, query: req.query || {} },
   });
 }
 
