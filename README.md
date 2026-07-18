@@ -38,19 +38,13 @@ Kustom base URL sumber: `ANIBIPLAY_BASE` (default `https://anibiplay.net`).
 ## Struktur Project
 ```
 veronime/
-├── api/                    # Vercel Serverless Functions
-│   ├── _lib/
-│   │   ├── anibiplay.js    # Scraper AnibiPlay (Inertia payload)
-│   │   ├── normalize.js    # Normalisasi data ke bentuk kanonik
-│   │   └── http.js         # CORS + TTL cache + helper
-│   ├── home.js             # Semua section homepage
-│   ├── detail.js           # Detail anime + episode lengkap
-│   ├── episode.js          # Mirror stream embed + download
-│   ├── search.js           # Search anime/manga/novel
-│   ├── explore.js          # Katalog paginated + filter
-│   ├── genres.js           # Daftar genre
-│   ├── proxy.js            # Global media proxy
-│   └── debug.js            # Raw props (dev util)
+├── api/                    # CUMA 1 Vercel Serverless Function (aman kuota Hobby)
+│   ├── [...path].js        # Catch-all router: /api/<route>
+│   └── _lib/               # (folder _ tidak dihitung function)
+│       ├── handlers.js     # Semua handler: home/detail/episode/search/explore/genres/proxy/debug
+│       ├── anibiplay.js    # Scraper AnibiPlay (Inertia payload)
+│       ├── normalize.js    # Normalisasi data ke bentuk kanonik
+│       └── http.js         # CORS + TTL cache + helper
 ├── src/
 │   ├── components/
 │   │   ├── Navbar.jsx      # Navbar + search dropdown (anime/manga/novel)
