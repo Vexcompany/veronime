@@ -5,14 +5,13 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/home.js":    { "memory": 256, "maxDuration": 20 },
-    "api/detail.js":  { "memory": 256, "maxDuration": 20 },
-    "api/episode.js": { "memory": 256, "maxDuration": 20 },
-    "api/search.js":  { "memory": 256, "maxDuration": 20 },
-    "api/explore.js": { "memory": 256, "maxDuration": 20 },
-    "api/genres.js":  { "memory": 256, "maxDuration": 20 },
-    "api/proxy.js":   { "memory": 512, "maxDuration": 30 },
-    "api/debug.js":   { "memory": 256, "maxDuration": 20 }
+    "api/home.js":    { "maxDuration": 20 },
+    "api/detail.js":  { "maxDuration": 20 },
+    "api/episode.js": { "maxDuration": 20 },
+    "api/search.js":  { "maxDuration": 20 },
+    "api/explore.js": { "maxDuration": 20 },
+    "api/genres.js":  { "maxDuration": 20 },
+    "api/proxy.js":   { "maxDuration": 30 },
+    "api/debug.js":   { "maxDuration": 20 }
   }
 }
-
