@@ -1,47 +1,33 @@
-// api/search.js — Proxy ke api-nanas.my.id/api/nonton/samehadaku/search.php
-const axios = require('axios');
-
-const NANAS_BASE = 'https://api-nanas.my.id/api/nonton/samehadaku';
+// api/search.js — Search anime & manga (& novel) via AnibiPlay
+// GET /api/search?q=sasaki
+const { search } = require('./_lib/anibiplay');
+const { normalizeCardList } = require('./_lib/normalize');
+const { setCors, cacheControl, sendError, cacheGet, cacheSet, TTL } = require('./_lib/http');
 
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  setCors(res);
+  cacheControl(res, TTL.SEARCH / 1000);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { q } = req.query;
-  if (!q || q.length < 2) return res.status(400).json({ error: 'Query minimal 2 karakter' });
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Query q dibutuhkan' });
 
   try {
-    const { data } = await axios.get(`${NANAS_BASE}/search.php`, {
-      params: { q },
-      timeout: 15000,
-    });
-
-    if (!data.status) {
-      return res.status(500).json({ error: 'API error' });
+    const cacheKey = `search:${q.toLowerCase()}`;
+    let payload = cacheGet(cacheKey);
+    if (!payload) {
+      const raw = await search(q);
+      if (raw?.error) return res.status(500).json({ error: raw.error });
+      const results = normalizeCardList(raw);
+      const counts = results.reduce((acc, r) => {
+        acc[r.category] = (acc[r.category] || 0) + 1;
+        return acc;
+      }, {});
+      payload = { results, total: results.length, counts, query: q, source: 'anibiplay' };
+      cacheSet(cacheKey, payload, TTL.SEARCH);
     }
-
-    const results = (data.result.results || []).map(a => ({
-      title: a.title,
-      slug: extractSlug(a.url),
-      image: a.image,
-      score: a.score,
-      status: a.status,
-      synopsis: a.synopsis,
-      genres: a.genres || [],
-      url: a.url,
-    }));
-
-    return res.json({ results, total: data.result.count, query: q });
-
+    return res.json(payload);
   } catch (error) {
-    console.error('[search]', error.message);
-    return res.status(500).json({ error: error.message });
+    return sendError(res, 'Gagal melakukan pencarian', error);
   }
 };
-
-function extractSlug(url) {
-  if (!url) return '';
-  const m = url.match(/\/anime\/([^\/]+)\/?/);
-  return m ? m[1] : '';
-}

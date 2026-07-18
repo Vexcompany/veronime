@@ -1,79 +1,30 @@
-// api/detail.js — Proxy ke api-nanas.my.id/api/nonton/samehadaku/detail.php
-// Returns: detail anime + episode list
-const axios = require('axios');
-
-const NANAS_BASE = 'https://api-nanas.my.id/api/nonton/samehadaku';
+// api/detail.js — Detail anime + daftar episode lengkap (AnibiPlay)
+// GET /api/detail?slug=sasaki-to-pii-chan
+const { getAnimeDetails } = require('./_lib/anibiplay');
+const { normalizeDetail } = require('./_lib/normalize');
+const { setCors, cacheControl, sendError, cacheGet, cacheSet, TTL } = require('./_lib/http');
 
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate');
+  setCors(res);
+  cacheControl(res, TTL.DETAIL / 1000);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { slug } = req.query;
-  if (!slug) return res.status(400).json({ error: 'slug dibutuhkan' });
-
-  const animeUrl = `https://v2.samehadaku.how/anime/${slug}/`;
+  if (!slug) return res.status(400).json({ error: 'Slug dibutuhkan' });
 
   try {
-    const { data } = await axios.get(`${NANAS_BASE}/detail.php`, {
-      params: { url: animeUrl },
-      timeout: 15000,
-    });
-
-    if (!data.status) {
-      return res.status(500).json({ error: 'API error', detail: data });
+    const cacheKey = `detail:${slug}`;
+    let payload = cacheGet(cacheKey);
+    if (!payload) {
+      const raw = await getAnimeDetails(slug);
+      if (!raw || raw.error) {
+        return res.status(404).json({ error: raw?.error || `Anime "${slug}" tidak ditemukan` });
+      }
+      payload = normalizeDetail(raw, slug);
+      cacheSet(cacheKey, payload, TTL.DETAIL);
     }
-
-    const r = data.result;
-
-    // Normalize episodes — strip HTML dari date field
-    const episodes = (r.episodes || []).map(ep => ({
-      number: ep.number,
-      title: ep.title || `Episode ${ep.number}`,
-      url: ep.url,
-      date: ep.date ? ep.date.replace(/<[^>]*>/g, '').trim() : '',
-      // Slug episode untuk navigasi
-      slug: extractEpSlug(ep.url),
-    }));
-
-    // Sort ascending by number
-    episodes.sort((a, b) => parseInt(a.number) - parseInt(b.number));
-
-    return res.json({
-      title: r.title,
-      image: r.image,
-      synopsis: r.synopsis,
-      genres: r.genres || [],
-      status: r.status,
-      type: r.type,
-      season: r.season,
-      studio: r.studio,
-      released: r.released,
-      totalEpisodes: r.episodes_count,
-      episodes,
-      related: (r.related || []).map(rel => ({
-        title: rel.title,
-        slug: extractSlug(rel.url),
-        image: rel.image,
-        url: rel.url,
-      })),
-    });
-
+    return res.json(payload);
   } catch (error) {
-    console.error('[detail]', error.message);
-    return res.status(500).json({ error: error.message });
+    return sendError(res, 'Gagal mengambil detail anime', error);
   }
 };
-
-function extractSlug(url) {
-  if (!url) return '';
-  const m = url.match(/\/anime\/([^\/]+)\/?/);
-  return m ? m[1] : '';
-}
-
-function extractEpSlug(url) {
-  if (!url) return '';
-  const m = url.match(/\/([^\/]+)\/?$/);
-  return m ? m[1] : '';
-}
