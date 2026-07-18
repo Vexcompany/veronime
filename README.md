@@ -121,6 +121,7 @@ User klik episode → /api/stream?url=https://v2.samehadaku.how/xxx-episode-N/
 Video player → <video src="https://pixeldrain.com/api/file/{ID}">
 ```
 
+
 ## Troubleshooting
 
 - **Selector berubah:** Samehadaku sering update HTML. Cek dan update selector di `api/anime-list.js` dan `api/anime-detail.js`
