@@ -1,12 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AnimeRow from '../components/AnimeRow';
-import { fetchTerbaru, fetchSchedule } from '../utils/api';
-
-// Hari ini untuk highlight jadwal
-function getTodayEn() {
-  return ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][new Date().getDay()];
-}
+import { fetchHome, externalUrl } from '../utils/api';
 
 function HeroSection({ anime }) {
   const navigate = useNavigate();
@@ -39,17 +34,31 @@ function HeroSection({ anime }) {
           </div>
         </div>
         <div className="flex-1 max-w-2xl">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <span className="cyber-tag">FEATURED</span>
             {anime.episode && (
               <span className="font-mono text-xs text-cyan-neon">▸ {anime.episode} AVAILABLE</span>
             )}
+            {anime.score != null && (
+              <span className="font-mono text-xs text-amber-300">★ {anime.score}</span>
+            )}
           </div>
-          <h1 className="font-orbitron font-black text-2xl md:text-4xl lg:text-[2.8rem] text-ice mb-5 leading-tight glow-cyan">
+          <h1 className="font-orbitron font-black text-2xl md:text-4xl lg:text-[2.8rem] text-ice mb-3 leading-tight glow-cyan">
             {anime.title}
           </h1>
+          {anime.genres?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-5">
+              {anime.genres.slice(0, 4).map((g, i) => <span key={i} className="cyber-tag">{g}</span>)}
+            </div>
+          )}
           <button
-            onClick={() => navigate(`/anime/${anime.slug}`)}
+            onClick={() => {
+              if (anime.category && anime.category !== 'anime') {
+                window.open(externalUrl(anime), '_blank', 'noopener');
+              } else {
+                navigate(`/anime/${anime.slug}`);
+              }
+            }}
             className="inline-flex items-center gap-2 px-7 py-3 rounded font-orbitron text-xs font-bold tracking-widest text-abyss transition-all hover:scale-105 active:scale-95"
             style={{ background:'linear-gradient(135deg,#00C2FF,#7B2FFF)', boxShadow:'0 0 30px rgba(0,194,255,0.4)' }}>
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -62,62 +71,22 @@ function HeroSection({ anime }) {
   );
 }
 
-// Mini jadwal hari ini di homepage
-function TodaySchedule({ items, day }) {
-  const navigate = useNavigate();
-  if (!items.length) return null;
-  return (
-    <section className="mb-12 px-4 md:px-8">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-1 h-6 bg-gradient-to-b from-cyan-neon to-violet-elec rounded-full"/>
-          <h2 className="font-orbitron font-bold text-base text-ice tracking-wider">JADWAL HARI INI</h2>
-          <span className="cyber-tag">{day.toUpperCase()}</span>
-        </div>
-        <button onClick={() => navigate('/schedule')}
-          className="font-mono text-xs text-slate-v hover:text-cyan-neon transition-colors tracking-wider">
-          LIHAT SEMUA →
-        </button>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {items.slice(0, 6).map((a, i) => (
-          <button key={i} onClick={() => navigate(`/anime/${a.slug}`)}
-            className="border-glow rounded p-3 text-left hover:bg-cyan-neon/5 transition-all group">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="font-mono text-xs text-cyan-neon">{a.time || '??:??'}</span>
-            </div>
-            <p className="text-xs text-ice font-medium line-clamp-2 leading-tight group-hover:text-cyan-neon transition-colors">
-              {a.title}
-            </p>
-            {a.score && (
-              <p className="font-mono text-xs text-slate-v mt-1">★ {a.score}</p>
-            )}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export default function Home() {
-  const [terbaru, setTerbaru] = useState([]);
-  const [todaySchedule, setTodaySchedule] = useState([]);
+  const [hero, setHero] = useState(null);
+  const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const today = getTodayEn();
 
   useEffect(() => {
-    Promise.all([
-      fetchTerbaru(1),
-      fetchSchedule(today, 0),
-    ])
-      .then(([tb, sched]) => {
-        setTerbaru(tb.results || []);
-        setTodaySchedule(sched.anime_list || []);
+    setLoading(true);
+    fetchHome()
+      .then((d) => {
+        setHero(d.hero || null);
+        setSections(d.sections || []);
       })
-      .catch(e => setError(e.message))
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [today]);
+  }, []);
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
@@ -141,9 +110,21 @@ export default function Home() {
 
   return (
     <div>
-      <HeroSection anime={terbaru[0] || null}/>
-      <AnimeRow title="ANIME TERBARU" tag="LIVE" items={terbaru} viewAllLink="/ongoing" usePosterApi={true}/>
-      <TodaySchedule items={todaySchedule} day={today}/>
+      <HeroSection anime={hero}/>
+      {sections.map((section) => (
+        <AnimeRow
+          key={section.key}
+          title={section.title}
+          tag={section.tag}
+          items={section.items}
+          viewAllLink={section.viewAll}
+        />
+      ))}
+      {!sections.length && (
+        <div className="text-center py-20">
+          <p className="font-orbitron text-slate-v text-sm">TIDAK ADA KONTEN</p>
+        </div>
+      )}
     </div>
   );
 }

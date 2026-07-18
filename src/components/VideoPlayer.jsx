@@ -1,6 +1,31 @@
 import { useRef, useState, useEffect } from 'react';
 
-export default function VideoPlayer({ src, title, onError }) {
+const DIRECT_MEDIA = /\.(mp4|webm|m3u8|mkv|mov|ts)(\?|#|$)/i;
+
+export default function VideoPlayer({ src, title, onError, embed }) {
+  // Mode embed: iframe untuk mirror host (odstream, filelions, mega, dsb)
+  if (src && (embed || !DIRECT_MEDIA.test(src))) {
+    return (
+      <div className="relative w-full aspect-video bg-black rounded overflow-hidden border border-slate-v">
+        <iframe
+          key={src}
+          src={src}
+          title={title || 'Video Player'}
+          className="w-full h-full"
+          frameBorder="0"
+          scrolling="no"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="origin"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
+
+  return <Html5Player src={src} title={title} onError={onError}/>;
+}
+
+function Html5Player({ src, title, onError }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const [playing, setPlaying] = useState(false);

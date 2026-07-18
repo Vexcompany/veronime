@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import AnimeDetail from './pages/AnimeDetail';
 import BrowsePage from './pages/BrowsePage';
+import ExplorePage from './pages/ExplorePage';
 import SearchPage from './pages/SearchPage';
 
 export default function App() {
@@ -17,7 +18,10 @@ export default function App() {
             <Route path="/ongoing" element={<BrowsePage/>}/>
             <Route path="/popular" element={<BrowsePage/>}/>
             <Route path="/movies" element={<BrowsePage/>}/>
+            <Route path="/complete" element={<BrowsePage/>}/>
+            <Route path="/explore" element={<ExplorePage/>}/>
             <Route path="/search" element={<SearchPage/>}/>
+            <Route path="*" element={<Home/>}/>
           </Routes>
         </main>
         {/* Footer */}
@@ -31,6 +35,7 @@ export default function App() {
             <span className="font-orbitron font-bold text-sm gradient-text tracking-widest">VERONIME</span>
           </div>
           <p className="font-mono text-xs text-slate-v">WATCH ANIME. FEEL THE FUTURE.</p>
+          <p className="font-mono text-xs text-slate-v/40 mt-1">DATA BY ANIBIPLAY</p>
         </footer>
       </div>
     </BrowserRouter>

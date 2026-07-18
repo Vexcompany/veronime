@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchSearch } from '../utils/api';
+import { fetchSearch, externalUrl } from '../utils/api';
 
 const NAV_LINKS = [
   ['/', 'HOME'],
   ['/ongoing', 'TERBARU'],
-  ['/schedule', 'JADWAL'],
+  ['/explore', 'EXPLORE'],
+  ['/popular', 'POPULER'],
 ];
 
 export default function Navbar() {
@@ -40,9 +41,13 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleSelect = (slug) => {
+  const handleSelect = (item) => {
     setOpen(false); setQuery('');
-    navigate(`/anime/${slug}`);
+    if (item.category && item.category !== 'anime') {
+      window.open(externalUrl(item), '_blank', 'noopener');
+    } else {
+      navigate(`/anime/${item.slug}`);
+    }
   };
 
   const handleSearchSubmit = (e) => {
@@ -97,16 +102,21 @@ export default function Navbar() {
           {open && results.length > 0 && (
             <div className="absolute top-full mt-1 left-0 right-0 bg-navy border border-slate-v/60 rounded overflow-hidden z-50 shadow-2xl">
               {results.slice(0, 6).map((r, i) => (
-                <button key={i} onClick={() => handleSelect(r.slug)}
+                <button key={i} onClick={() => handleSelect(r)}
                   className="w-full flex items-center gap-3 px-3 py-2 hover:bg-cyan-neon/10 transition-colors text-left">
                   {r.image && (
                     <img src={r.image} alt="" className="w-8 h-10 object-cover rounded-sm shrink-0 border border-slate-v/30"/>
                   )}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-ice font-medium line-clamp-1">{r.title}</p>
                     <div className="flex items-center gap-2 mt-0.5">
+                      {r.category && r.category !== 'anime' && (
+                        <span className="text-[10px] font-mono text-pink-300 border border-pink-400/40 px-1 rounded-sm leading-tight">
+                          {r.category.toUpperCase()}
+                        </span>
+                      )}
                       {r.status && <p className="text-xs text-slate-v font-mono">{r.status}</p>}
-                      {r.score && <p className="text-xs text-cyan-neon/70 font-mono">★ {r.score}</p>}
+                      {r.score != null && <p className="text-xs text-cyan-neon/70 font-mono">★ {r.score}</p>}
                     </div>
                   </div>
                 </button>

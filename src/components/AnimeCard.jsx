@@ -1,40 +1,32 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { proxied, externalUrl } from '../utils/api';
 
-// In-memory cache poster — persist selama session
-const posterCache = {};
+const CATEGORY_STYLE = {
+  manga: { label: 'MANGA', cls: 'text-pink-300 border-pink-400/40' },
+  novel: { label: 'NOVEL', cls: 'text-amber-300 border-amber-400/40' },
+  anime: { label: null,    cls: '' },
+};
 
-export default function AnimeCard({ anime, usePosterApi = false }) {
+export default function AnimeCard({ anime }) {
   const cardRef = useRef(null);
   const navigate = useNavigate();
   const [tiltStyle, setTiltStyle] = useState({});
   const [hovered, setHovered] = useState(false);
-  const cachedPoster = anime.slug && posterCache[anime.slug];
-  const [poster, setPoster] = useState(cachedPoster || anime.image || '');
   const [posterLoaded, setPosterLoaded] = useState(false);
+  const [useProxy, setUseProxy] = useState(false);
 
-  useEffect(() => {
-    if (!anime.slug || !usePosterApi) return;
+  const isExternal = anime.external || (anime.category && anime.category !== 'anime');
+  const cat = CATEGORY_STYLE[anime.category] || CATEGORY_STYLE.anime;
 
-    // Sudah di cache → langsung pakai
-    if (posterCache[anime.slug]) {
-      setPoster(posterCache[anime.slug]);
-      return;
+  const handleClick = () => {
+    if (isExternal) {
+      // Konten non-anime (manga/novel) belum punya halaman internal — buka sumbernya
+      window.open(externalUrl(anime), '_blank', 'noopener');
+    } else if (anime.slug) {
+      navigate(`/anime/${anime.slug}`);
     }
-
-    // Fetch poster asli, reset posterLoaded dulu supaya shimmer muncul lagi
-    // saat gambar berganti dari thumbnail ke poster
-    fetch(`/api/poster?slug=${encodeURIComponent(anime.slug)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.image && d.image !== poster) {
-          posterCache[anime.slug] = d.image;
-          setPosterLoaded(false); // reset agar img onLoad terpanggil ulang
-          setPoster(d.image);
-        }
-      })
-      .catch(() => {});
-  }, [anime.slug, usePosterApi]);
+  };
 
   // 3D tilt
   const handleMouseMove = (e) => {
@@ -55,29 +47,35 @@ export default function AnimeCard({ anime, usePosterApi = false }) {
     setHovered(false);
   };
 
+  const posterSrc = anime.image
+    ? useProxy ? proxied(anime.image) : anime.image
+    : 'https://placehold.co/200x300/0D1B2E/3A4A5C?text=...';
+
   return (
     <div
       ref={cardRef}
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={handleMouseLeave}
-      onClick={() => navigate(`/anime/${anime.slug}`)}
+      onClick={handleClick}
       style={{ ...tiltStyle, transformStyle: 'preserve-3d', cursor: 'pointer' }}
       className="relative group select-none"
     >
       <div className="relative rounded overflow-hidden border border-slate-v group-hover:border-cyan-neon/50 transition-colors duration-300 holo-shimmer scanline-overlay">
         <div className="aspect-[2/3] relative overflow-hidden bg-navy">
-          {/* Shimmer placeholder */}
           {!posterLoaded && (
             <div className="absolute inset-0 bg-gradient-to-br from-navy to-abyss animate-pulse"/>
           )}
           <img
-            src={poster || `https://placehold.co/200x300/0D1B2E/3A4A5C?text=...`}
+            src={posterSrc}
             alt={anime.title}
             className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${posterLoaded ? 'opacity-100' : 'opacity-0'}`}
             loading="lazy"
             onLoad={() => setPosterLoaded(true)}
-            onError={() => setPosterLoaded(true)}
+            onError={() => {
+              if (!useProxy && anime.image) { setUseProxy(true); setPosterLoaded(false); }
+              else setPosterLoaded(true);
+            }}
           />
 
           <div className="absolute inset-0 bg-gradient-to-t from-abyss via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"/>
@@ -90,12 +88,26 @@ export default function AnimeCard({ anime, usePosterApi = false }) {
             </div>
           )}
 
+          {cat.label && (
+            <div className="absolute top-2 left-2">
+              <span className={`font-mono text-xs bg-abyss/90 border px-2 py-0.5 rounded-sm ${cat.cls}`}>
+                {cat.label}
+              </span>
+            </div>
+          )}
+
           <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${hovered ? 'opacity-100' : 'opacity-0'}`}>
             <div className="w-12 h-12 rounded-full border-2 border-cyan-neon flex items-center justify-center bg-abyss/60 backdrop-blur-sm"
                  style={{ boxShadow: '0 0 20px rgba(0,194,255,0.5)' }}>
-              <svg className="w-5 h-5 text-cyan-neon ml-1" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
+              {isExternal ? (
+                <svg className="w-5 h-5 text-cyan-neon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-cyan-neon ml-1" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              )}
             </div>
           </div>
 
@@ -104,9 +116,11 @@ export default function AnimeCard({ anime, usePosterApi = false }) {
 
         <div className="p-2 bg-navy/90">
           <p className="text-xs text-ice font-medium line-clamp-2 leading-tight">{anime.title}</p>
-          {anime.released && (
-            <p className="text-xs text-slate-v font-mono mt-0.5 truncate">{anime.released}</p>
-          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            {anime.type && <p className="text-xs text-slate-v font-mono truncate">{anime.type}</p>}
+            {anime.score != null && <p className="text-xs text-cyan-neon/70 font-mono">★ {anime.score}</p>}
+            {anime.status && <p className="text-xs text-slate-v/60 font-mono truncate ml-auto">{anime.status}</p>}
+          </div>
         </div>
       </div>
 

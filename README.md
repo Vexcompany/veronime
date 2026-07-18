@@ -5,30 +5,64 @@ Website nonton anime futuristik dengan tampilan holographic elegan.
 ## Tech Stack
 - **Frontend:** React 18 + Vite + Tailwind CSS 3
 - **Backend:** Vercel Serverless Functions (Node.js)
-- **Scraping:** Axios + Cheerio
-- **Source:** Samehadaku (v2.samehadaku.how)
-- **Stream:** Pixeldrain via API
+- **Scraping:** Axios + Cheerio (Inertia.js `data-page` payload)
+- **Source:** [AnibiPlay](https://anibiplay.net) — anime, manga & novel sub Indo
+- **Stream:** Mirror embed multi-server (odstream, filelions, mega, dll)
+
+## Fitur
+1. **Homepage sections** — semua section dari sumber (ongoing, update terbaru, populer, rekomendasi, manga populer, novel, dst) otomatis terender
+2. **Anime detail & episode lengkap** — sinopsis, studio, genre, trailer + daftar semua episode
+3. **Video stream embed** — mirror per kualitas (480P/720P/default), auto mode `<video>` untuk file direct & `<iframe>` untuk embed host, prev/next episode, daftar link download
+4. **Search anime & manga (& novel)** — satu endpoint untuk semua kategori, hasil manga/novel dibuka di situs sumber
+5. **Explore paginated catalog** — support `page`, `type`, `status`, `sort`, `search`, dan multi-`genres` filter dengan URL yang shareable
+6. **Global proxy** — request scraper bisa lewat proxy (env `ANIBIPLAY_PROXY`), plus endpoint `/api/proxy` untuk media
+
+Konfigurasi proxy via environment variable (salah satu):
+`ANIBIPLAY_PROXY`, `SCRAPE_PROXY`, `PROXY_URL`, `HTTPS_PROXY`
+Format: `http://user:pass@host:port`
+
+Kustom base URL sumber: `ANIBIPLAY_BASE` (default `https://anibiplay.net`).
+
+## API Endpoints
+| Endpoint | Keterangan |
+| --- | --- |
+| `GET /api/home` | Semua section homepage + hero |
+| `GET /api/detail?slug=...` | Detail anime + daftar episode lengkap |
+| `GET /api/episode?slug=...&ep=...` | Mirror stream, download, prev/next |
+| `GET /api/search?q=...` | Search anime, manga & novel |
+| `GET /api/explore?page=&type=&status=&sort=&search=&genres=` | Katalog paginated + filters |
+| `GET /api/genres` | Daftar genre (cached) |
+| `GET /api/proxy?url=...` | Media proxy (gambar/video, support Range) |
+| `GET /api/debug?what=home\|detail\|episode\|explore\|search\|proxy` | Raw props sumber (util dev) |
 
 ## Struktur Project
 ```
 veronime/
 ├── api/                    # Vercel Serverless Functions
-│   ├── anime-list.js       # Daftar anime (ongoing/popular/movie)
-│   ├── anime-detail.js     # Detail anime + daftar episode
-│   ├── stream.js           # Ekstrak URL stream Pixeldrain
-│   ├── episode-detail.js   # Detail episode + semua sumber
-│   └── search.js           # Pencarian anime
+│   ├── _lib/
+│   │   ├── anibiplay.js    # Scraper AnibiPlay (Inertia payload)
+│   │   ├── normalize.js    # Normalisasi data ke bentuk kanonik
+│   │   └── http.js         # CORS + TTL cache + helper
+│   ├── home.js             # Semua section homepage
+│   ├── detail.js           # Detail anime + episode lengkap
+│   ├── episode.js          # Mirror stream embed + download
+│   ├── search.js           # Search anime/manga/novel
+│   ├── explore.js          # Katalog paginated + filter
+│   ├── genres.js           # Daftar genre
+│   ├── proxy.js            # Global media proxy
+│   └── debug.js            # Raw props (dev util)
 ├── src/
 │   ├── components/
-│   │   ├── Navbar.jsx      # Navbar + search dropdown
-│   │   ├── AnimeCard.jsx   # Card 3D holographic tilt
+│   │   ├── Navbar.jsx      # Navbar + search dropdown (anime/manga/novel)
+│   │   ├── AnimeCard.jsx   # Card 3D holographic tilt + badge kategori
 │   │   ├── AnimeRow.jsx    # Horizontal scroll row
-│   │   └── VideoPlayer.jsx # Custom HTML5 video player
+│   │   └── VideoPlayer.jsx # HTML5 player + mode embed iframe
 │   ├── pages/
-│   │   ├── Home.jsx        # Homepage + hero section
-│   │   ├── AnimeDetail.jsx # Halaman detail + player + episode list
-│   │   ├── BrowsePage.jsx  # Browse by category
-│   │   └── SearchPage.jsx  # Halaman hasil pencarian
+│   │   ├── Home.jsx        # Semua section dari sumber
+│   │   ├── AnimeDetail.jsx # Detail + player + mirror + episode list
+│   │   ├── BrowsePage.jsx  # Terbaru / Populer / Movie / Complete
+│   │   ├── ExplorePage.jsx # Katalog + filter lengkap + pagination
+│   │   └── SearchPage.jsx  # Hasil pencarian dengan tab kategori
 │   └── utils/
 │       └── api.js          # Fetch ke serverless functions
 ├── vercel.json             # Konfigurasi Vercel

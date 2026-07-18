@@ -5,11 +5,13 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/terbaru.js":  { "memory": 256, "maxDuration": 20 },
-    "api/detail.js":   { "memory": 256, "maxDuration": 20 },
-    "api/search.js":   { "memory": 256, "maxDuration": 20 },
-    "api/schedule.js": { "memory": 256, "maxDuration": 20 },
-    "api/stream.js":   { "memory": 256, "maxDuration": 30 },
-    "api/poster.js":   { "memory": 256, "maxDuration": 20 }
+    "api/home.js":    { "memory": 256, "maxDuration": 20 },
+    "api/detail.js":  { "memory": 256, "maxDuration": 20 },
+    "api/episode.js": { "memory": 256, "maxDuration": 20 },
+    "api/search.js":  { "memory": 256, "maxDuration": 20 },
+    "api/explore.js": { "memory": 256, "maxDuration": 20 },
+    "api/genres.js":  { "memory": 256, "maxDuration": 20 },
+    "api/proxy.js":   { "memory": 512, "maxDuration": 30 },
+    "api/debug.js":   { "memory": 256, "maxDuration": 20 }
   }
 }

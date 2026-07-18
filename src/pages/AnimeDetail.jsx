@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AnimeCard from '../components/AnimeCard';
 import VideoPlayer from '../components/VideoPlayer';
-import { fetchDetail, fetchStream, fetchStreamByServer } from '../utils/api';
+import { fetchDetail, fetchEpisode, externalUrl } from '../utils/api';
 
 export default function AnimeDetail() {
   const { slug } = useParams();
@@ -11,70 +11,41 @@ export default function AnimeDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [selectedEp, setSelectedEp] = useState(null);
-  const [streamUrl, setStreamUrl] = useState('');
+  const [selectedEp, setSelectedEp] = useState(null);   // number
+  const [epData, setEpData] = useState(null);           // response /api/episode
+  const [activeStream, setActiveStream] = useState(null);
   const [streamLoading, setStreamLoading] = useState(false);
   const [streamError, setStreamError] = useState('');
-  const [chosenServer, setChosenServer] = useState('');
-  const [allServers, setAllServers] = useState({});  // { "3": "Wibufile 480p", ... }
   const [epPage, setEpPage] = useState(0);
   const playerRef = useRef(null);
   const EP_PER_PAGE = 60;
 
   useEffect(() => {
     setLoading(true); setError(null);
-    setAnime(null); setSelectedEp(null);
-    setStreamUrl(''); setAllServers({}); setChosenServer('');
+    setAnime(null); setSelectedEp(null); setEpData(null); setActiveStream(null);
     fetchDetail(slug)
       .then(setAnime)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [slug]);
 
-  const handleEpisode = async (ep) => {
-    if (!ep.url) { setStreamError('URL episode tidak tersedia.'); return; }
-    setSelectedEp(ep);
+  const loadEpisode = (num) => {
+    if (num == null) return;
+    setSelectedEp(num);
     setStreamLoading(true);
     setStreamError('');
-    setStreamUrl('');
-    setAllServers({});
-    setChosenServer('');
+    setEpData(null);
+    setActiveStream(null);
     setTimeout(() => playerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-    try {
-      const data = await fetchStream(ep.url);
-      if (data.success && data.player_src) {
-        setStreamUrl(data.player_src);
-        setChosenServer(data.chosen_server_id || '');
-        setAllServers(data.all_servers || {});
-      } else {
-        setStreamError('Stream tidak tersedia untuk episode ini.');
-      }
-    } catch (e) {
-      setStreamError('Gagal memuat stream: ' + e.message);
-    }
-    setStreamLoading(false);
-  };
-
-  // Ganti server/kualitas manual
-  const handleSwitchServer = async (serverId) => {
-    if (!selectedEp || serverId === chosenServer) return;
-    setStreamLoading(true);
-    setStreamError('');
-    setStreamUrl('');
-    try {
-      // Slug episode dari URL: .../anime-title-episode-1/
-      const epSlug = selectedEp.slug || selectedEp.url?.match(/\/([^\/]+)\/?$/)?.[1] || '';
-      const data = await fetchStreamByServer(epSlug, serverId);
-      if (data.success && data.player_src) {
-        setStreamUrl(data.player_src);
-        setChosenServer(serverId);
-      } else {
-        setStreamError(`Server ${allServers[serverId] || serverId} tidak tersedia.`);
-      }
-    } catch (e) {
-      setStreamError('Gagal ganti server: ' + e.message);
-    }
-    setStreamLoading(false);
+    fetchEpisode(slug, num)
+      .then((d) => {
+        setEpData(d);
+        const first = d.streams?.[0] || null;
+        setActiveStream(first);
+        if (!first) setStreamError('Stream terkunci atau belum tersedia untuk episode ini.');
+      })
+      .catch((e) => setStreamError('Gagal memuat stream: ' + e.message))
+      .finally(() => setStreamLoading(false));
   };
 
   if (loading) return (
@@ -97,16 +68,29 @@ export default function AnimeDetail() {
 
   if (!anime) return null;
 
-  const episodes = anime.episodes || [];
+  // Movie tanpa daftar episode -> tetap tampilkan 1 tombol "Full Movie"
+  const episodes = anime.episodes?.length
+    ? anime.episodes
+    : (anime.type === 'MOVIE' || anime.totalEpisodes === 1
+      ? [{ number: 1, title: 'Full Movie', date: null }]
+      : []);
   const totalPages = Math.ceil(episodes.length / EP_PER_PAGE);
   const displayEps = episodes.slice(epPage * EP_PER_PAGE, (epPage + 1) * EP_PER_PAGE);
 
-  // Kelompokkan server berdasarkan host
-  const wibuServers = Object.entries(allServers).filter(([,v]) => v.toLowerCase().includes('wibu'));
-  const megaServers = Object.entries(allServers).filter(([,v]) => v.toLowerCase().includes('mega'));
-  const otherServers = Object.entries(allServers).filter(([,v]) =>
-    !v.toLowerCase().includes('wibu') && !v.toLowerCase().includes('mega')
-  );
+  // Kelompokkan streams per kualitas
+  const streams = epData?.streams || [];
+  const qualityGroups = streams.reduce((acc, s) => {
+    const q = s.quality || 'default';
+    (acc[q] = acc[q] || []).push(s);
+    return acc;
+  }, {});
+  const qualityOrder = Object.keys(qualityGroups).sort((a, b) => {
+    if (a === 'default') return 1;
+    if (b === 'default') return -1;
+    return parseInt(a) - parseInt(b);
+  });
+
+  const downloads = epData?.downloads || [];
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8">
@@ -135,9 +119,9 @@ export default function AnimeDetail() {
             {[
               ['STATUS',   anime.status],
               ['TYPE',     anime.type],
-              ['SEASON',   anime.season],
               ['STUDIO',   anime.studio],
-              ['RILIS',    anime.released],
+              ['RILIS',    anime.released || anime.year],
+              ['SCORE',    anime.score != null ? `★ ${anime.score}` : null],
               ['TOTAL EP', anime.totalEpisodes],
             ].filter(([,v]) => v).map(([label, val]) => (
               <div key={label} className="flex items-start gap-2">
@@ -147,7 +131,10 @@ export default function AnimeDetail() {
             ))}
             {anime.genres?.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-2">
-                {anime.genres.map((g,i) => <span key={i} className="cyber-tag">{g}</span>)}
+                {anime.genres.map((g,i) => (
+                  <button key={i} onClick={() => navigate(`/explore?genres=${encodeURIComponent(String(g).toLowerCase().replace(/\s+/g, '-'))}`)}
+                    className="cyber-tag cursor-pointer hover:text-cyan-neon">{g}</button>
+                ))}
               </div>
             )}
           </div>
@@ -162,16 +149,36 @@ export default function AnimeDetail() {
           {anime.synopsis && (
             <div className="mt-4 mb-6 p-4 bg-navy/60 rounded border border-slate-v/30">
               <p className="font-mono text-xs text-cyan-neon mb-2 tracking-wider">SYNOPSIS</p>
-              <p className="text-sm text-ice/70 leading-relaxed">{anime.synopsis}</p>
+              <p className="text-sm text-ice/70 leading-relaxed whitespace-pre-line">{anime.synopsis}</p>
+            </div>
+          )}
+
+          {/* ===== TRAILER ===== */}
+          {anime.trailer && !selectedEp && (
+            <div className="mb-8">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-1 h-5 bg-gradient-to-b from-cyan-neon to-violet-elec rounded-full"/>
+                <h2 className="font-orbitron font-bold text-sm tracking-wider">TRAILER</h2>
+              </div>
+              <div className="relative w-full aspect-video bg-black rounded overflow-hidden border border-slate-v">
+                <iframe
+                  src={anime.trailer.includes('youtube') ? anime.trailer.replace('watch?v=', 'embed/') : anime.trailer}
+                  title="Trailer"
+                  className="w-full h-full"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
             </div>
           )}
 
           {/* ===== PLAYER ===== */}
           <div ref={playerRef} className="mb-8">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
               <div className="w-1 h-5 bg-gradient-to-b from-cyan-neon to-violet-elec rounded-full"/>
               <h2 className="font-orbitron font-bold text-sm tracking-wider">
-                {selectedEp ? `EPISODE ${selectedEp.number}` : 'VIDEO PLAYER'}
+                {selectedEp != null ? `EPISODE ${selectedEp}` : 'VIDEO PLAYER'}
               </h2>
               {streamLoading && (
                 <div className="flex items-center gap-2">
@@ -179,10 +186,22 @@ export default function AnimeDetail() {
                   <span className="font-mono text-xs text-slate-v">LOADING STREAM...</span>
                 </div>
               )}
-              {chosenServer && allServers[chosenServer] && (
-                <span className="font-mono text-xs text-cyan-neon/60 ml-auto">
-                  {allServers[chosenServer]}
-                </span>
+              {/* Prev / Next */}
+              {selectedEp != null && !streamLoading && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    disabled={epData?.prev == null}
+                    onClick={() => loadEpisode(epData?.prev)}
+                    className="ep-btn rounded px-3 py-1.5 text-xs disabled:opacity-30 disabled:cursor-not-allowed">
+                    ‹ PREV
+                  </button>
+                  <button
+                    disabled={epData?.next == null}
+                    onClick={() => loadEpisode(epData?.next)}
+                    className="ep-btn rounded px-3 py-1.5 text-xs disabled:opacity-30 disabled:cursor-not-allowed">
+                    NEXT ›
+                  </button>
+                </div>
               )}
             </div>
 
@@ -197,64 +216,60 @@ export default function AnimeDetail() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
                 </svg>
                 <p className="font-mono text-xs text-red-400 text-center">{streamError}</p>
-                <button onClick={() => selectedEp && handleEpisode(selectedEp)}
-                  className="cyber-tag cursor-pointer hover:text-cyan-neon">↺ RETRY</button>
+                {selectedEp != null && (
+                  <button onClick={() => loadEpisode(selectedEp)}
+                    className="cyber-tag cursor-pointer hover:text-cyan-neon">↺ RETRY</button>
+                )}
               </div>
             ) : (
               <VideoPlayer
-                src={streamUrl}
-                title={`${anime.title}${selectedEp ? ` - Ep ${selectedEp.number}` : ''}`}
-                onError={() => setStreamError('Video error. Coba ganti server di bawah.')}
+                src={activeStream?.url || ''}
+                embed={activeStream?.kind === 'embed'}
+                title={`${anime.title}${selectedEp != null ? ` - Ep ${selectedEp}` : ''}`}
+                onError={() => setStreamError('Video error. Coba mirror lain di bawah.')}
               />
             )}
 
-            {/* ===== SERVER SELECTOR ===== */}
-            {Object.keys(allServers).length > 0 && (
+            {/* ===== MIRROR SELECTOR ===== */}
+            {!streamLoading && streams.length > 0 && (
               <div className="mt-4 p-4 bg-navy/40 rounded border border-slate-v/30">
-                <p className="font-mono text-xs text-slate-v mb-3 tracking-wider">PILIH SERVER / KUALITAS</p>
+                <p className="font-mono text-xs text-slate-v mb-3 tracking-wider">SERVER VIDEO / MIRROR</p>
                 <div className="flex flex-col gap-3">
-                  {/* Wibufile */}
-                  {wibuServers.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">Wibufile</span>
-                      {wibuServers.map(([id, label]) => (
-                        <button key={id} onClick={() => handleSwitchServer(id)}
+                  {qualityOrder.map((q) => (
+                    <div key={q} className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">
+                        {q === 'default' ? 'Default' : q.toUpperCase()}
+                      </span>
+                      {qualityGroups[q].map((s) => (
+                        <button key={s.id} onClick={() => setActiveStream(s)}
                           className={`ep-btn rounded px-3 py-1.5 transition-all text-xs ${
-                            chosenServer === id ? 'active' : ''
+                            activeStream?.id === s.id ? 'active' : ''
                           }`}>
-                          {label.replace('Wibufile ', '')}
+                          {s.label}
                         </button>
                       ))}
                     </div>
-                  )}
-                  {/* Mega */}
-                  {megaServers.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">Mega</span>
-                      {megaServers.map(([id, label]) => (
-                        <button key={id} onClick={() => handleSwitchServer(id)}
-                          className={`ep-btn rounded px-3 py-1.5 transition-all text-xs ${
-                            chosenServer === id ? 'active' : ''
-                          }`}>
-                          {label.replace('Mega ', '')}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {/* Lainnya */}
-                  {otherServers.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs text-slate-v/60 w-16 shrink-0">Lainnya</span>
-                      {otherServers.map(([id, label]) => (
-                        <button key={id} onClick={() => handleSwitchServer(id)}
-                          className={`ep-btn rounded px-3 py-1.5 transition-all text-xs ${
-                            chosenServer === id ? 'active' : ''
-                          }`}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ===== DOWNLOAD LINKS ===== */}
+            {!streamLoading && downloads.length > 0 && (
+              <div className="mt-4 p-4 bg-navy/40 rounded border border-slate-v/30">
+                <p className="font-mono text-xs text-slate-v mb-3 tracking-wider">
+                  DOWNLOAD EPISODE {selectedEp}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {downloads.map((d, i) => (
+                    <a key={i} href={d.url} target="_blank" rel="noopener noreferrer"
+                      className="ep-btn rounded px-3 py-1.5 text-xs inline-flex items-center gap-1.5 hover:border-cyan-neon hover:text-cyan-neon">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                      </svg>
+                      {d.label}
+                    </a>
+                  ))}
                 </div>
               </div>
             )}
@@ -286,12 +301,12 @@ export default function AnimeDetail() {
               </div>
               <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-8 xl:grid-cols-10 gap-2">
                 {displayEps.map((ep, i) => (
-                  <button key={i} onClick={() => handleEpisode(ep)}
+                  <button key={i} onClick={() => loadEpisode(ep.number)}
                     title={ep.date || ep.title}
                     className={`ep-btn rounded py-2 text-center transition-all ${
-                      selectedEp?.url === ep.url ? 'active' : ''
+                      selectedEp === ep.number ? 'active' : ''
                     }`}>
-                    {ep.number || (epPage * EP_PER_PAGE + i + 1)}
+                    {ep.number}
                   </button>
                 ))}
               </div>
@@ -312,6 +327,14 @@ export default function AnimeDetail() {
               </div>
             </div>
           )}
+
+          {/* Link ke sumber */}
+          <div className="mt-10 text-right">
+            <a href={externalUrl({ url: `/anime/${anime.slug}` })} target="_blank" rel="noopener noreferrer"
+              className="font-mono text-xs text-slate-v/50 hover:text-cyan-neon transition-colors">
+              SOURCE: ANIBIPLAY ↗
+            </a>
+          </div>
         </div>
       </div>
     </div>
